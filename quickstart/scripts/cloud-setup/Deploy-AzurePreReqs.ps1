@@ -18,9 +18,9 @@ BeginScope -Scope "Config file validation"
 
 if (! $validConfigFile)
 {
-  EndScope
-	throw "Invalid properties on the '$ConfigurationFile' configuration file."
-	exit 1
+    EndScope
+    throw "Invalid properties on the '$ConfigurationFile' configuration file."
+    exit 1
 }
 
 [hashtable]$config = LoadConfigurationFile -ConfigurationFile $ConfigurationFile -Verbose:$VerbosePreference
@@ -28,19 +28,38 @@ if (! $validConfigFile)
 
 if (! $validConfigFileProperties)
 {
-  EndScope
-	throw "The '$ConfigurationFile' config file has invalid properties."
-	exit 1
+    EndScope
+    throw "The '$ConfigurationFile' config file has invalid properties."
+    exit 1
 }
 
 EndScope
 
-[hashtable]$servicePrincipals = SetupServicePrincipals -Configuration $config -Verbose:$VerbosePreference
+# Extract service principal details from the configuration for each environment
+$servicePrincipals = @{}
+foreach ($env in $config.environments.Keys) {
+    $envConfig = $config.environments[$env]
+    $servicePrincipals[$env] = @{
+        clientId     = $envConfig.clientId
+        clientSecret = $envConfig.clientSecret
+        tenantId     = $envConfig.tenantId
+    }
+}
+
+# Check if service principal credentials are provided; skip creation if they exist
+if ($servicePrincipals["dev"].clientId -and $servicePrincipals["dev"].clientSecret -and $servicePrincipals["dev"].tenantId) {
+    Write-Host "Service principal credentials provided, skipping creation step."
+} else {
+    # Setup service principals if credentials are not provided
+    $servicePrincipals = SetupServicePrincipals -Configuration $config -Verbose:$VerbosePreference
+}
+
+# Setup environments
 SetupEnvironments -Configuration $config -ServicePrincipals $servicePrincipals -Verbose:$VerbosePreference
 
-#Save this password inside output hol file
-$ServicePrincipalSecret = $ServicePrincipals[$config.servicePrincipals[0]].clientSecret
+# Save the service principal secret in the output HOL file
+$ServicePrincipalSecret = $servicePrincipals["dev"].clientSecret  # Assuming "dev" environment secret is to be saved
 
-PublishOutputs -Configuration $config -ServicePrincipalSecret $ServicePrincipalSecret  -Verbose:$VerbosePreference
+PublishOutputs -Configuration $config -ServicePrincipalSecret $ServicePrincipalSecret -Verbose:$VerbosePreference
 
 Write-Host "Done!"
